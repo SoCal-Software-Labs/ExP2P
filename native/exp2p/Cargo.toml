@@ -1,0 +1,19 @@
+[package]
+name = "exp2p"
+version = "0.1.0"
+authors = []
+edition = "2018"
+
+[lib]
+name = "exp2p"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+bytes = "1.1.0"
+futures = "0.3.21"
+tokio = {version = "1.17.0", features = ["full"]}
+rustler = "0.23.0"
+quinn = { version = "=0.8.0" }
+qp2p = {path = "../../../qp2p"}
+
