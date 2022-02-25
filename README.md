@@ -30,7 +30,7 @@ end
 On one instance run:
 
 ```elixir
-{:ok, pid} =
+{:ok, _pid} =
   ExP2P.Dispatcher.start_link(
     bind_addr: "127.0.0.1:1234",
     bootstrap_nodes: [],
@@ -43,7 +43,7 @@ On one instance run:
         if msg == "MARCO" do
           :ok = ExP2P.stream_send(endpoint, sender, "POLO", 10_000)
         else
-          :ok = ExP2P.stream_send(endpoint, sender, "POLO", 10_000)
+          :ok = ExP2P.stream_send(endpoint, sender, "WHAT?", 10_000)
         end
       end
     },
