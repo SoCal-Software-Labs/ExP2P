@@ -1,28 +1,37 @@
 defmodule ExP2P.Connection do
-  use GenServer
+  use GenServer, restart: :temporary
 
   require Logger
 
-  def start_link(opts) do
-    IO.inspect(opts)
-
-    GenServer.start_link(__MODULE__, opts, [])
+  def start_link(%{new_state: _, callback: _, endpoint: _, connection: _} = state) do
+    GenServer.start_link(__MODULE__, state, [])
   end
 
-  def init([handle, endpoint, connection]) do
-    {:ok,
-     %{
-       handle: handle,
-       endpoint: endpoint,
-       connection: connection
-     }}
+  def init(state) do
+    {:ok, Map.put(state, :user_state, state.new_state.(state.connection))}
   end
 
   def handle_info(
         {:new_message, msg, resource, from},
-        %{endpoint: endpoint, handle: handle} = state
+        %{endpoint: endpoint, user_state: user_state, connection: connection, callback: callback} =
+          state
       ) do
-    :ok = handle.(endpoint, msg, resource, from)
+    :ok = callback.(endpoint, connection, msg, resource, from, user_state)
     {:noreply, state}
+  end
+
+  def handle_info(
+        {:error, error},
+        state
+      ) do
+    Logger.error("Connection error #{error}")
+    {:stop, :normal, state}
+  end
+
+  def handle_info(
+        :connection_stopped,
+        state
+      ) do
+    {:stop, :normal, state}
   end
 end

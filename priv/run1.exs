@@ -1,5 +1,5 @@
 {:ok, db} = SortedSetKV.open("data/testdb")
-:ok = SortedSetKV.zadd(db, "mycollection", "hello", "world", 42, true)
+:ok = SortedSetKV.zadd(db, "mycollection", "hello", String.duplicate("world", 1), 43, false)
 
 {:ok, pid} =
   ExP2P.Dispatcher.start_link(
@@ -9,8 +9,10 @@
     [
       fn endpoint, b, c, from ->
         if c != nil do
-          {k, _} = SortedSetKV.zgetbykey(db, "mycollection", b, 0)
-          :ok = ExP2P.stream_response(endpoint, c, k, 10_000)
+          Task.start(fn ->
+            {k, _} = SortedSetKV.zgetbykey(db, "mycollection", b, 0)
+            :ok = ExP2P.stream_response(endpoint, c, k, 10_000)
+          end)
         end
 
         :ok

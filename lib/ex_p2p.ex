@@ -12,6 +12,12 @@ defmodule ExP2P do
   def send_bidirectional(_endpoint, _connection, _resp, _waiting, _timeout),
     do: :erlang.nif_error(:nif_not_loaded)
 
+  def send_bidirectional_open(_endpoint, _connection, _waiting, _listener_pid),
+    do: :erlang.nif_error(:nif_not_loaded)
+
+  def send_stream_finish(_endpoint, _stream),
+    do: :erlang.nif_error(:nif_not_loaded)
+
   def send_unidirectional(_endpoint, _connection, _resp, _waiting, _timeout),
     do: :erlang.nif_error(:nif_not_loaded)
 
@@ -45,6 +51,18 @@ defmodule ExP2P do
     end
   end
 
+  def unidirectional_many(endpoint, addrs, msg, timeout \\ 10000) do
+    :ok = send_unidirectional_many(endpoint, addrs, msg, self(), timeout - 100)
+
+    receive do
+      :ok -> :ok
+      {:error, err} -> {:error, err}
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
+
   def unidirectional(endpoint, connection, msg, timeout \\ 10000) do
     :ok = send_unidirectional(endpoint, connection, msg, self(), timeout - 100)
 
@@ -69,7 +87,16 @@ defmodule ExP2P do
     end
   end
 
-  def stream_response(endpoint, stream, msg, timeout \\ 10000) do
+  def bidirectional_open(endpoint, connection, listener_pid) do
+    :ok = send_bidirectional_open(endpoint, connection, self(), listener_pid)
+
+    receive do
+      {:new_stream, stream} -> {:ok, stream}
+      {:error, err} -> {:error, err}
+    end
+  end
+
+  def stream_send(endpoint, stream, msg, timeout \\ 10000) do
     :ok = send_stream_response(endpoint, stream, msg, self(), timeout - 100)
 
     receive do
@@ -79,5 +106,9 @@ defmodule ExP2P do
       timeout ->
         {:error, :timeout}
     end
+  end
+
+  def stream_finish(endpoint, stream) do
+    :ok = send_stream_finish(endpoint, stream)
   end
 end

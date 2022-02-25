@@ -3,11 +3,17 @@ defmodule ExP2P.Dispatcher do
 
   require Logger
 
-  def start_link(bind_addr, bootstrap, connection_mod, connection_args, opts) do
+  def start_link(opts) do
+    bind_addr = Keyword.fetch!(opts, :bind_addr)
+    other_opts = Keyword.fetch!(opts, :opts)
+    bootstrap = Keyword.fetch!(opts, :bootstrap_nodes)
+    connection_mod = Keyword.fetch!(opts, :connection_mod)
+    connection_args = Keyword.fetch!(opts, :connection_mod_args)
+
     GenServer.start_link(
       __MODULE__,
       [bind_addr, bootstrap, connection_mod, connection_args],
-      opts
+      other_opts
     )
   end
 
@@ -38,9 +44,9 @@ defmodule ExP2P.Dispatcher do
   def handle_call(
         :endpoint,
         _,
-        %{endpoint: endpoint} = state
+        %{endpoint: endpoint, bind_addr: bind_addr} = state
       ) do
-    {:reply, {:ok, endpoint}, state}
+    {:reply, {:ok, endpoint, bind_addr}, state}
   end
 
   def handle_info(
@@ -52,12 +58,11 @@ defmodule ExP2P.Dispatcher do
           connection_args: connection_args
         } = state
       ) do
-    IO.inspect({:new_conn, connection})
-
     {:ok, pid} =
       DynamicSupervisor.start_child(
         supervisor,
-        {connection_mod, connection_args ++ [endpoint, connection]}
+        {connection_mod,
+         Map.merge(connection_args, %{endpoint: endpoint, connection: connection})}
       )
 
     ExP2P.set_controlling_pid(responder, pid)
