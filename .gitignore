@@ -26,3 +26,5 @@ ex_p2p-*.tar
 /tmp/
 
 /data/
+
+/priv/native/
