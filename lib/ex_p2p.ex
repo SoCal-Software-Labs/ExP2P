@@ -81,17 +81,17 @@ defmodule ExP2P do
     end
   end
 
-  # def bidirectional(endpoint, connection, msg, timeout \\ 10000) do
-  #   :ok = send_bidirectional(endpoint, connection, msg, self(), timeout - 100)
+  def bidirectional(endpoint, connection, msg, timeout \\ 10000) do
+    :ok = send_bidirectional(endpoint, connection, msg, self(), timeout - 100)
 
-  #   receive do
-  #     {:message_reply, reply} -> {:ok, reply}
-  #     {:error, err} -> {:error, err}
-  #   after
-  #     timeout ->
-  #       {:error, :timeout}
-  #   end
-  # end
+    receive do
+      {:message_reply, reply} -> {:ok, reply}
+      {:error, err} -> {:error, err}
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
 
   def pseudo_bidirectional(endpoint, connection, msg, timeout \\ 10000) do
     :ok = send_pseudo_bidirectional(endpoint, connection, msg, self(), timeout - 100)
