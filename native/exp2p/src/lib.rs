@@ -375,8 +375,6 @@ async fn run_pseudo_bidirectional_open(
     listener_pid: Pid,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (other_send_stream, recv_stream_mutex) = connection.open_pseudo_bi().await?;
-
-    let mut recv_stream = recv_stream_mutex.lock().await;
     let stream_resource = rustler::ResourceArc::new(StreamResourceArc {
         inner: StreamResource {
             stream: Arc::new(Mutex::new(other_send_stream)),
@@ -385,7 +383,7 @@ async fn run_pseudo_bidirectional_open(
 
     let mut msg_env = rustler::OwnedEnv::new();
     msg_env.send_and_clear(&waiting, |env| (new_stream(), stream_resource).encode(env));
-
+    let mut recv_stream = recv_stream_mutex.lock().await;
     while let Ok(Some(bytes)) = recv_stream.next().await {
         msg_env.send_and_clear(&listener_pid, |env| {
             (new_stream_message(), make_binary(env, &bytes[..])).encode(env)
@@ -484,11 +482,11 @@ async fn run_connect(
         .filter_map(|b| String::from_utf8_lossy(b.as_slice()).parse().ok())
         .collect::<Vec<SocketAddr>>();
 
-    if let Some((conn, _)) = timeout(
+    if let (conn, _) = timeout(
         Duration::from_millis(timeout_val),
-        endpoint.connect_to_any(converted.as_slice()),
+        endpoint.connect_to(&"192.168.1.1:44444".parse().unwrap()),
     )
-    .await?
+    .await??
     {
         let mut msg_env = rustler::OwnedEnv::new();
         msg_env.send_and_clear(&waiting, |env| {
