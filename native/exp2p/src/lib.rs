@@ -482,9 +482,9 @@ async fn run_connect(
         .filter_map(|b| String::from_utf8_lossy(b.as_slice()).parse().ok())
         .collect::<Vec<SocketAddr>>();
 
-    if let (conn, _) = timeout(
+    if let Some((conn, _)) = timeout(
         Duration::from_millis(timeout_val),
-        endpoint.connect_to(&"192.168.1.1:44444".parse().unwrap()),
+        endpoint.connect_to_any(converted.as_slice()),
     )
     .await??
     {
