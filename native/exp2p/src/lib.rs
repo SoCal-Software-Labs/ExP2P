@@ -486,7 +486,7 @@ async fn run_connect(
         Duration::from_millis(timeout_val),
         endpoint.connect_to_any(converted.as_slice()),
     )
-    .await??
+    .await?
     {
         let mut msg_env = rustler::OwnedEnv::new();
         msg_env.send_and_clear(&waiting, |env| {
