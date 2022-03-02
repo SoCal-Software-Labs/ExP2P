@@ -50,7 +50,7 @@ defmodule ExP2P.Dispatcher do
   end
 
   def handle_info(
-        {:new_connection_to_accept, connection, responder},
+        {:new_connection_to_accept, connection, from, responder},
         %{
           connection_mod: connection_mod,
           endpoint: endpoint,
@@ -62,7 +62,7 @@ defmodule ExP2P.Dispatcher do
       DynamicSupervisor.start_child(
         supervisor,
         {connection_mod,
-         Map.merge(connection_args, %{endpoint: endpoint, connection: connection})}
+         Map.merge(connection_args, %{endpoint: endpoint, connection: connection, from: from})}
       )
 
     ExP2P.set_controlling_pid(responder, pid)
