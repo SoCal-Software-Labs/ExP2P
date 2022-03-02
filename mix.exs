@@ -59,7 +59,8 @@ defmodule ExP2P.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:rustler, "~> 0.23.0"}
+      {:rustler, "~> 0.23.0"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
       # {:benchee, "~> 1.0"},
       # {:sorted_set_kv, ">= 0.0.0"}
       # {:dep_from_hexpm, "~> 0.3.0"},
