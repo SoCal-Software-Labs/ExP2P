@@ -347,7 +347,10 @@ async fn run_bidirectional_open(
     waiting: Pid,
     listener_pid: Pid,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (other_send_stream, mut recv_stream) = connection.open_bi().await?;
+    let (other_send_stream, mut recv_stream) = timeout(Duration::from_millis(5000), async {
+        connection.open_bi().await
+    })
+    .await??;
 
     let stream_resource = rustler::ResourceArc::new(StreamResourceArc {
         inner: StreamResource {
@@ -374,7 +377,11 @@ async fn run_pseudo_bidirectional_open(
     waiting: Pid,
     listener_pid: Pid,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (other_send_stream, recv_stream_mutex) = connection.open_pseudo_bi().await?;
+    let (other_send_stream, recv_stream_mutex) = timeout(Duration::from_millis(5000), async {
+        connection.open_pseudo_bi().await
+    })
+    .await??;
+
     let stream_resource = rustler::ResourceArc::new(StreamResourceArc {
         inner: StreamResource {
             stream: Arc::new(Mutex::new(other_send_stream)),

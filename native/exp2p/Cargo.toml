@@ -10,8 +10,10 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+qp2p = {git = "https://github.com/SoCal-Software-Labs/qp2p", rev = "861a8cfaebd086f8100c06fc285abdbedc5f52a9"}
 bytes = "1.1.0"
 futures = "0.3.21"
 tokio = {version = "1.17.0", features = ["full"]}
 rustler = "0.23.0"
-qp2p = {git = "https://github.com/SoCal-Software-Labs/qp2p.git", branch = "pseudo-streams"}
+
+
