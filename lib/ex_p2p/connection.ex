@@ -3,12 +3,18 @@ defmodule ExP2P.Connection do
 
   require Logger
 
-  def start_link(%{new_state: _, callback: _, endpoint: _, connection: _, from: _} = state) do
+  def start_link(
+        %{new_state: _, cleanup: _, callback: _, endpoint: _, connection: _, from: _} = state
+      ) do
     GenServer.start_link(__MODULE__, state, [])
   end
 
   def init(state) do
-    {:ok, Map.put(state, :user_state, state.new_state.(state.connection))}
+    state =
+      state
+      |> Map.put(:user_state, state.new_state.(state.connection))
+
+    {:ok, state}
   end
 
   def handle_info(
@@ -22,6 +28,7 @@ defmodule ExP2P.Connection do
         } = state
       ) do
     :ok = callback.(endpoint, connection, msg, resource, from, user_state)
+
     {:noreply, state}
   end
 
@@ -37,6 +44,12 @@ defmodule ExP2P.Connection do
         :connection_stopped,
         state
       ) do
+    # IO.puts("stopped")
     {:stop, :normal, state}
+  end
+
+  def terminate(reason, state) do
+    state.cleanup.(state.user_state)
+    reason
   end
 end

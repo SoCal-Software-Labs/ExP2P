@@ -3,13 +3,18 @@ defmodule ExP2P do
     otp_app: :ex_p2p,
     crate: :exp2p
 
-  def start(_waiting, _bind, _bootstrap), do: :erlang.nif_error(:nif_not_loaded)
+  def start(_waiting, _bind, _bootstrap, _client_mode \\ false, _foward_port \\ false),
+    do: :erlang.nif_error(:nif_not_loaded)
+
   def set_controlling_pid(_resp_channel, _pid), do: :erlang.nif_error(:nif_not_loaded)
 
   def send_stream_response(_endpoint, _stream, _resp, _waiting, _timeout),
     do: :erlang.nif_error(:nif_not_loaded)
 
   def send_bidirectional(_endpoint, _connection, _resp, _waiting, _timeout),
+    do: :erlang.nif_error(:nif_not_loaded)
+
+  def send_bidirectional_many(_endpoint, _addrs, _resp, _waiting, _timeout),
     do: :erlang.nif_error(:nif_not_loaded)
 
   def send_pseudo_bidirectional(_endpoint, _connection, _resp, _waiting, _timeout),

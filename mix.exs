@@ -43,6 +43,7 @@ defmodule ExP2P.MixProject do
       description: "P2P communication over Quic for Elixir using QP2P",
       files: [
         "lib",
+        "native/exp2p/.cargo",
         "native/exp2p/src",
         "native/exp2p/Cargo.toml",
         "LICENSE",

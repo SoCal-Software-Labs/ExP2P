@@ -7,21 +7,23 @@ defmodule ExP2P.Dispatcher do
     bind_addr = Keyword.fetch!(opts, :bind_addr)
     other_opts = Keyword.fetch!(opts, :opts)
     bootstrap = Keyword.fetch!(opts, :bootstrap_nodes)
+    client_mode = Keyword.fetch!(opts, :client_mode)
+    port_forward = Keyword.fetch!(opts, :port_forward)
     connection_mod = Keyword.fetch!(opts, :connection_mod)
     connection_args = Keyword.fetch!(opts, :connection_mod_args)
 
     GenServer.start_link(
       __MODULE__,
-      [bind_addr, bootstrap, connection_mod, connection_args],
+      [bind_addr, bootstrap, connection_mod, connection_args, client_mode, port_forward],
       other_opts
     )
   end
 
   def endpoint(pid), do: GenServer.call(pid, :endpoint, :infinity)
 
-  def init([bind_addr, bootstrap, connection_mod, connection_args]) do
+  def init([bind_addr, bootstrap, connection_mod, connection_args, client_mode, port_forward]) do
     {:ok, pid} = DynamicSupervisor.start_link(strategy: :one_for_one)
-    :ok = ExP2P.start(self(), bind_addr, bootstrap)
+    :ok = ExP2P.start(self(), bind_addr, bootstrap, client_mode, port_forward)
 
     receive do
       {:new_endpoint, endpoint, bind_addr} ->

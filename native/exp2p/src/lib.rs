@@ -42,7 +42,7 @@ pub struct EndpointResource {
     pub unidirectional_sender: mpsc::Sender<(Vec<u8>, Connection, Pid, u64)>,
     pub unidirectional_many_sender: mpsc::Sender<(Vec<u8>, Vec<Vec<u8>>, Pid, u64)>,
     pub bidirectional_sender: mpsc::Sender<(Vec<u8>, Connection, Pid, u64)>,
-    pub pseudo_bidirectional_sender: mpsc::Sender<(Vec<u8>, Connection, Pid, u64)>,
+    pub bidirectional_many_sender: mpsc::Sender<(Vec<u8>, Vec<Vec<u8>>, Pid, u64)>,
     pub new_connection_sender: mpsc::Sender<(Vec<Vec<u8>>, Pid, u64)>,
     pub open_bi_sender: mpsc::Sender<(Connection, Pid, Pid)>,
     pub open_pbi_sender: mpsc::Sender<(Connection, Pid, Pid)>,
@@ -165,25 +165,30 @@ fn send_bidirectional(
 }
 
 #[rustler::nif]
-fn send_pseudo_bidirectional(
+fn send_bidirectional_many(
     endpoint_term: Term,
-    connection_term: Term,
+    peers: Vec<Binary>,
     bytes: Binary,
     waiting: Pid,
     timeout: u64,
 ) -> NifResult<Atom> {
     let endpoint: rustler::ResourceArc<EndpointResource> = endpoint_term.decode()?;
-    let connection: rustler::ResourceArc<ConnectionResource> = connection_term.decode()?;
+    let converted = peers
+        .iter()
+        .map(|b| b.as_slice().to_vec())
+        .collect::<Vec<Vec<u8>>>();
 
-    let ret = endpoint.pseudo_bidirectional_sender.try_send((
+    let ret = endpoint.bidirectional_many_sender.try_send((
         bytes.as_slice().to_vec(),
-        connection.connection.clone(),
+        converted,
         waiting,
         timeout,
     ));
     match ret {
         Ok(_) => Ok(ok()),
-        Err(_) => Ok(error()),
+        Err(_e) =>{
+            Ok(error())
+        }
     }
 }
 
@@ -265,7 +270,7 @@ fn send_stream_finish(endpoint_term: Term, stream_term: Term) -> NifResult<Atom>
 }
 
 #[rustler::nif]
-fn start(listening: Pid, bind_address: Binary, bootstrap: Vec<Binary>) -> Atom {
+fn start(listening: Pid, bind_address: Binary, bootstrap: Vec<Binary>, client_mode: bool, forward_port: bool) -> Atom {
     let converted = bootstrap
         .iter()
         .filter_map(|b| String::from_utf8_lossy(b.as_slice()).parse().ok())
@@ -280,7 +285,7 @@ fn start(listening: Pid, bind_address: Binary, bootstrap: Vec<Binary>) -> Atom {
             .build()
             .unwrap()
             .block_on(async {
-                match run_loop(listening, bind, converted.as_slice()).await {
+                match run_loop(listening, bind, converted.as_slice(), client_mode, forward_port).await {
                     Ok(_) => (),
                     Err(e) => {
                         let mut msg_env = rustler::OwnedEnv::new();
@@ -317,26 +322,43 @@ async fn run_bidirectional_send(
     Ok(())
 }
 
-async fn run_pseudo_bidirectional_send(
+async fn run_bidirectional_many_send(
+    endpoint: Endpoint,
     msg: Vec<u8>,
-    connection: Connection,
+    addrs: Vec<Vec<u8>>,
     waiting: Pid,
     timeout_val: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut other_send_stream, recv_stream) = connection.open_pseudo_bi().await?;
-    other_send_stream.send_user_msg(Bytes::from(msg)).await?;
 
-    let reply = timeout(Duration::from_millis(timeout_val), async {
-        recv_stream.lock().await.next().await
-    })
-    .await??;
-    other_send_stream.finish().await?;
+    let converted = addrs
+        .iter()
+        .filter_map(|b| String::from_utf8_lossy(b).parse().ok())
+        .collect::<Vec<SocketAddr>>();
 
-    if let Some(b) = reply {
-        let mut msg_env = rustler::OwnedEnv::new();
-        msg_env.send_and_clear(&waiting, |env| {
-            (message_reply(), make_binary(env, &b[..])).encode(env)
-        });
+    if let Some((conn, _)) = timeout(
+        Duration::from_millis(timeout_val),
+        endpoint.connect_to_any(converted.as_slice()),
+    )
+    .await?
+    {
+        let (mut other_send_stream, mut recv_stream) = conn.open_bi().await?;
+        other_send_stream.send_user_msg(Bytes::from(msg)).await?;
+
+        let reply = timeout(Duration::from_millis(timeout_val), async {
+            recv_stream.next().await
+        })
+        .await??;
+        other_send_stream.finish().await?;
+
+        let conn_str = conn.remote_address().to_string();
+
+        if let Some(b) = reply {
+            let mut msg_env = rustler::OwnedEnv::new();
+            msg_env.send_and_clear(&waiting, |env| {
+                (message_reply(), make_binary(env, conn_str.as_bytes()), make_binary(env, &b[..])).encode(env)
+            });
+        }
+
     }
 
     Ok(())
@@ -512,22 +534,44 @@ async fn run_loop(
     listening: Pid,
     bind_address: SocketAddr,
     bootstrap: &[SocketAddr],
+    client_mode: bool,
+    forward_port: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (node, mut incoming_conns, _contact) = Endpoint::new_peer(
-        // bind_address 127.0.0.1:0
-        bind_address,
-        bootstrap,
-        Config {
-            idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
-            ..Default::default()
-        },
-    )
-    .await?;
+    let config = Config {
+        forward_port: forward_port,
+        keep_alive_interval: Duration::from_secs(30).into(),
+        idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
+        ..Default::default()
+    };
 
+    let (node, incoming_conns) = 
+        if client_mode {
+            let node = Endpoint::new_client(
+                bind_address,
+                config
+            )?;
+            (node, None)
+        } else {
+            let (node, incoming_conns, _contact) = Endpoint::new_peer(
+                bind_address,
+                bootstrap,
+                Config {
+                    forward_port: forward_port,
+                    keep_alive_interval: Duration::from_secs(30).into(),
+                    idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
+                    ..Default::default()
+                },
+            )
+            .await?;
+            (node, Some(incoming_conns))
+    };
+
+    let (_stop_tx, mut stop_rx) =
+        mpsc::channel::<()>(1);
     let (bidirectional_sender, mut bidirectional_rx) =
         mpsc::channel::<(Vec<u8>, Connection, Pid, u64)>(BUFFER_SIZE);
-    let (pseudo_bidirectional_sender, mut pseudo_bidirectional_rx) =
-        mpsc::channel::<(Vec<u8>, Connection, Pid, u64)>(BUFFER_SIZE);
+    let (bidirectional_many_sender, mut bidirectional_many_rx) =
+        mpsc::channel::<(Vec<u8>, Vec<Vec<u8>>, Pid, u64)>(BUFFER_SIZE);
     let (tx, mut rx) = mpsc::channel::<(Vec<u8>, Connection, Pid, u64)>(BUFFER_SIZE);
     let (stream_tx, mut stream_rx) =
         mpsc::channel::<(Vec<u8>, StreamResource, Pid, u64)>(BUFFER_SIZE);
@@ -616,10 +660,12 @@ async fn run_loop(
         }
     });
 
+    let node5 = node.clone();
     tokio::spawn(async move {
-        while let Some((msg, connection, waiting, timeout)) = pseudo_bidirectional_rx.recv().await {
+        while let Some((msg, addrs, waiting, timeout)) = bidirectional_many_rx.recv().await {
+            let e5 = node5.clone();
             tokio::spawn(async move {
-                match run_pseudo_bidirectional_send(msg, connection, waiting, timeout).await {
+                match run_bidirectional_many_send(e5, msg, addrs, waiting, timeout).await {
                     Ok(_) => (),
                     Err(e) => {
                         let mut msg_env = rustler::OwnedEnv::new();
@@ -697,7 +743,7 @@ async fn run_loop(
                 unidirectional_many_sender: many_tx,
                 stream_sender: stream_tx,
                 bidirectional_sender: bidirectional_sender,
-                pseudo_bidirectional_sender: pseudo_bidirectional_sender,
+                bidirectional_many_sender: bidirectional_many_sender,
                 new_connection_sender: connect_tx,
             }),
             make_binary(env, node.public_addr().to_string().as_bytes()),
@@ -705,19 +751,25 @@ async fn run_loop(
             .encode(env)
     });
 
-    while let Some((connection, mut incoming_messages)) = incoming_conns.next().await {
-        tokio::spawn(async move {
-            match run_loop_connection(listening, connection, &mut incoming_messages).await {
-                Ok(_) => (),
-                Err(e) => {
-                    let mut msg_env = rustler::OwnedEnv::new();
-                    msg_env.send_and_clear(&listening, |env| {
-                        (error(), make_binary(env, &e.to_string().as_bytes()[..])).encode(env)
-                    });
+    if let Some(mut new_conns) = incoming_conns {
+        while let Some((connection, mut incoming_messages)) = new_conns.next().await {
+            tokio::spawn(async move {
+                match run_loop_connection(listening, connection, &mut incoming_messages).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        let mut msg_env = rustler::OwnedEnv::new();
+                        msg_env.send_and_clear(&listening, |env| {
+                            (error(), make_binary(env, &e.to_string().as_bytes()[..])).encode(env)
+                        });
+                    }
                 }
-            }
-        });
+            });
+        }
+    } else {
+        // TODO have way to exit?
+        let _ = stop_rx.recv().await;
     }
+    
 
     Ok(())
 }
@@ -842,7 +894,7 @@ rustler::init!(
         send_unidirectional,
         send_unidirectional_many,
         send_bidirectional,
-        send_pseudo_bidirectional,
+        send_bidirectional_many,
         send_stream_response,
         send_stream_finish,
         send_bidirectional_open,
